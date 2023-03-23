@@ -7,14 +7,15 @@ class Classifier:
     def train(self, model: str, data: pd.DataFrame, **kwargs):
         match model:
             case "one_vs_all_1":
-                self.__train_one_vs_all_euclidean_minimum_distance(
-                    data, kwargs["target_class"]
-                )
+                self.__target_class = kwargs["target_class"]
+                self.__distance_type = kwargs["distance_type"]
+
+                self.__train_one_vs_all_minimum_distance(data)
+
             case _:
                 raise ValueError(model)
 
         self.__selected_model: str = model
-        self.__target_class = kwargs["target_class"]
 
     def predict(self, sample: pd.Series | pd.DataFrame):
         match self.__selected_model:
@@ -23,20 +24,35 @@ class Classifier:
             case _:
                 raise NotImplementedError(self.__selected_model)
 
-    def __train_one_vs_all_euclidean_minimum_distance(
-        self, data: pd.DataFrame, target_class: str
-    ):
+    def __train_one_vs_all_minimum_distance(self, data: pd.DataFrame):
         classes_indexes: dict[str, pd.Index] = get_labels_by_indexes(data)
 
-        target_class_indexes: pd.Index = classes_indexes[target_class]
+        target_class_indexes: pd.Index = classes_indexes[self.__target_class]
 
         other_class_indexes: pd.Index = pd.Index([]).append(
-            [value for key, value in classes_indexes.items() if key != target_class]
+            [
+                value
+                for key, value in classes_indexes.items()
+                if key != self.__target_class
+            ]
         )
 
         self.__mean_target_class = np.zeros([data.shape[1] - 1, 1])
 
         self.__mean_other_classes = np.zeros([data.shape[1] - 1, 1])
+
+        if self.__distance_type == "mahalanobis":
+            data_without_label = data.iloc[:, :-1]
+
+            cov_target_class = data_without_label.loc[target_class_indexes].cov()
+
+            cov_other_class = data_without_label.loc[other_class_indexes].cov()
+
+            covariance = (cov_target_class + cov_other_class) / 2
+
+            self.__cov_inv = pd.DataFrame(
+                np.linalg.pinv(covariance.values), covariance.columns, covariance.index
+            )
 
         current_feature: int = 0
         for feature in data.columns:
@@ -59,16 +75,41 @@ class Classifier:
         self, sample: pd.Series | pd.DataFrame
     ) -> np.ndarray:
         def predict_one(one_sample: pd.Series):
-            return np.dot(
-                np.subtract(
-                    self.__mean_target_class[:, 0], self.__mean_other_classes[:, 0]
-                ).T,
-                one_sample
-                - 0.5
-                * np.add(
-                    self.__mean_target_class[:, 0], self.__mean_other_classes[:, 0]
-                ),
-            )
+            if self.__distance_type == "euclidean":
+                return np.dot(
+                    (
+                        self.__mean_target_class[:, 0] - self.__mean_other_classes[:, 0]
+                    ).T,
+                    np.subtract(
+                        one_sample,
+                        0.5
+                        * np.add(
+                            self.__mean_target_class[:, 0],
+                            self.__mean_other_classes[:, 0],
+                        ),
+                    ),
+                )
+
+            elif self.__distance_type == "mahalanobis":
+                return np.dot(
+                    np.dot(
+                        np.subtract(
+                            self.__mean_target_class[:, 0],
+                            self.__mean_other_classes[:, 0],
+                        ).T,
+                        self.__cov_inv.values,
+                    ),
+                    np.subtract(
+                        one_sample,
+                        0.5
+                        * np.add(
+                            self.__mean_target_class[:, 0],
+                            self.__mean_other_classes[:, 0],
+                        ),
+                    ),
+                )
+            else:
+                raise ValueError(self.__distance_type)
 
         if type(sample) is pd.Series:
             result = predict_one(sample)
@@ -76,9 +117,12 @@ class Classifier:
             result = np.zeros(sample.shape[0])
 
             for index in range(sample.shape[0]):
-                result[index] = predict_one(sample.iloc[index, :])
+                result_teste = predict_one(sample.iloc[index, :])
+                result[index] = result_teste
 
         else:
             raise TypeError(sample)
 
-        return np.asarray([self.__target_class if elem > 0 else "other" for elem in result])
+        return np.asarray(
+            [self.__target_class if elem > 0 else "other" for elem in result]
+        )
