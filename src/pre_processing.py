@@ -1,30 +1,49 @@
 import pandas as pd
+import numpy as np
 from scipy.stats import kruskal
 from sklearn.decomposition import PCA
-from utils import get_labels_by_indexes
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 
-def comput_PCA(features: pd.DataFrame) -> dict[str, float]:
+def comput_PCA(features: pd.DataFrame, n_components: int) -> pd.DataFrame:
     """Get the features sorted by variance ratio with PCA algorithm
 
     Args:
         features (pd.DataFrame): standardized training data
+        n_componentes (int): number of components (features) to kept
 
     Returns:
-        dict[str, float]: key - the feature name; value - the variance ratio
+        DataFrame: transformed data
     """
-    features = features.drop("label", axis=1)
 
-    pca: PCA = PCA(n_components=features.shape[1])
+    pca: PCA = PCA(n_components=n_components, svd_solver="full")
 
-    pca.fit_transform(features)
+    transformed_data: np.ndarray = pca.fit_transform(features)
 
-    return dict(zip(pca.feature_names_in_, pca.explained_variance_ratio_))  # type: ignore
+    # print(pca.explained_variance_ratio_)
+
+    return pd.DataFrame(
+        transformed_data, columns=pca.get_feature_names_out(), index=features.index
+    )
+
+
+def comput_LDA(
+    features: pd.DataFrame, labels: pd.Series, n_components: int
+) -> pd.DataFrame:
+    lda: LinearDiscriminantAnalysis = LinearDiscriminantAnalysis(
+        n_components=n_components
+    )
+
+    transformed_data: np.ndarray = lda.fit_transform(X=features, y=labels)
+
+    return pd.DataFrame(
+        transformed_data, columns=lda.get_feature_names_out(), index=features.index
+    )
 
 
 def comput_kruskal(
-    features: pd.DataFrame,
-) -> dict[str, float]:
+    features: pd.DataFrame, n_components: int, labels_indexes: dict[str, pd.Index]
+) -> pd.DataFrame:
     """Comput kruskal wallis H value for each feature
 
     Args:
@@ -35,11 +54,7 @@ def comput_kruskal(
         dict[str, float]: return the sorted H value by feature
     """
 
-    labels_indexes: dict[str, pd.Index] = get_labels_by_indexes(features)
-
     kruskal_wallis_features = {}
-
-    features = features.drop("label", axis=1)
 
     # apply kruskal wallis for each feature
     for feature in features:
@@ -66,4 +81,4 @@ def comput_kruskal(
         sorted(kruskal_wallis_features.items(), key=lambda x: x[1], reverse=True)
     )
 
-    return kruskal_wallis_features
+    return features[list(kruskal_wallis_features.keys())[:n_components]]
