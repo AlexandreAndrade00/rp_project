@@ -1,43 +1,31 @@
 from utils import read_and_standardize_data
 import classifier as cl
 
-TARGET_CLASS = "rock"
+TARGET_CLASS = "blues"
 
 
 def main():
 
-    standarized_train, standarized_test = read_and_standardize_data(TARGET_CLASS)
+    X_train, X_test, y_train, y_test = read_and_standardize_data(TARGET_CLASS, True)
+    
+    def run_one_vs_all(distance_type:str ):
 
-    print("Euclidean\n")
-    run_one_vs_all(standarized_train, standarized_test, "euclidean")
-    run_one_vs_all(standarized_train, standarized_test, "euclidean", pre_process_method="PCA", n_components=13)
-    run_one_vs_all(standarized_train, standarized_test, "euclidean", pre_process_method="KW", n_components=6)
-    run_one_vs_all(standarized_train, standarized_test, "euclidean", pre_process_method="LDA")
+        file = open("stats.txt", "w")
 
-    print("\nMahalanobis\n")
-    run_one_vs_all(standarized_train, standarized_test, "mahalanobis")
-    run_one_vs_all(standarized_train, standarized_test, "mahalanobis", pre_process_method="PCA", n_components=90)
-    run_one_vs_all(standarized_train, standarized_test, "mahalanobis", pre_process_method="KW", n_components=15)
-    run_one_vs_all(standarized_train, standarized_test, "mahalanobis", pre_process_method="LDA")
+        model: cl.Classifier = cl.Classifier(X_train, y_train)
 
+        model.pre_process("LDA")
 
+        model.train("one_vs_all", target_class=TARGET_CLASS, distance_type=distance_type)
 
-def run_one_vs_all(train_data, test_data, distance_type: str = "euclidean", pre_process_method: str | None = None, n_components: int | None = None):
-    model: cl.Classifier = cl.Classifier(train_data)
+        model.predict(X_test, y_test)
 
-    if pre_process_method is not None:
-        if n_components is None:
-            n_components = 10
+        model.get_statistics(y_test, TARGET_CLASS, False, file=file)
 
-        model.pre_process(pre_process_method, n_components)
+        file.flush()
+        file.close()
 
-    model.train("one_vs_all", target_class=TARGET_CLASS, distance_type=distance_type)
-
-    model.predict(test_data)
-
-    target_labels = test_data.iloc[:, -1].to_numpy()
-
-    model.get_statistics(target_labels, TARGET_CLASS)
+    run_one_vs_all("euclidean")
 
 
 if __name__ == "__main__":

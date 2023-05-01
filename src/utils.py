@@ -1,9 +1,10 @@
 import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 
-def read_and_standardize_data(target_class: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+def read_and_standardize_data(target_class: str, two_classes: bool) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Read data from data file, split in train and test groups and standardize the data with z-score
 
     Returns:
@@ -12,28 +13,23 @@ def read_and_standardize_data(target_class: str) -> tuple[pd.DataFrame, pd.DataF
     """
 
     # read the data
-    data: pd.DataFrame = pd.read_csv("../data/dados.csv")
+    data: pd.DataFrame = pd.read_csv("data/dados.csv")
+
+    data_y = data['label'].values
+    data_X = data.drop(columns=['label', 'filename']).values
+    
 
     # split the data, 80% training, 20% test
-    data_train, data_test = train_test_split(
-        data, test_size=0.2, stratify=data.label, random_state=42
+    X_train, X_test, y_train, y_test = train_test_split(
+        data_X, data_y, test_size=0.2, stratify=data.label, random_state=42
     )
 
     def standardize(data):
-        data_df: pd.DataFrame = pd.DataFrame(data)
+        return StandardScaler().fit_transform(data)
+    
+    if two_classes:
+        y_train[y_train != target_class] = "other"
+        y_test[y_test != target_class] = "other"
 
-        # get the only the features (remove song name and label)
-        features: pd.DataFrame = data_df.iloc[:, 1:-1]
 
-        # standardize the data with z-score
-        standarized_features: pd.DataFrame = pd.DataFrame(
-            StandardScaler().fit_transform(features),
-            columns=features.columns,
-            index=features.index,
-        )
-
-        data_df.loc[data_df.label != target_class, "label"] = "other"
-
-        return pd.concat([standarized_features, data_df.label], axis=1)
-
-    return standardize(data_train), standardize(data_test)
+    return standardize(X_train), standardize(X_test), y_train, y_test

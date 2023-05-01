@@ -5,7 +5,9 @@ from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 
-def comput_PCA(features: pd.DataFrame, n_components: int) -> pd.DataFrame:
+def comput_PCA(
+    features: np.ndarray, model: PCA | None = None
+) -> tuple[PCA, np.ndarray]:
     """Get the features sorted by variance ratio with PCA algorithm
 
     Args:
@@ -15,35 +17,31 @@ def comput_PCA(features: pd.DataFrame, n_components: int) -> pd.DataFrame:
     Returns:
         DataFrame: transformed data
     """
-
-    pca: PCA = PCA(n_components=n_components, svd_solver="full")
-
-    transformed_data: np.ndarray = pca.fit_transform(features)
+    if model is None:
+        pca: PCA = PCA(n_components="mle", svd_solver="full")
+        pca.fit(features)
+    else:
+        pca = model
 
     # print(pca.explained_variance_ratio_)
 
-    return pd.DataFrame(
-        transformed_data, columns=pca.get_feature_names_out(), index=features.index
-    )
+    return pca, pca.transform(features)
 
 
 def comput_LDA(
-    features: pd.DataFrame, labels: pd.Series, n_components: int
-) -> pd.DataFrame:
-    lda: LinearDiscriminantAnalysis = LinearDiscriminantAnalysis(
-        n_components=n_components
-    )
+    data_X: np.ndarray, data_y: np.ndarray, model: LinearDiscriminantAnalysis | None
+) -> tuple[LinearDiscriminantAnalysis, np.ndarray]:
+    if model is None:
+        lda: LinearDiscriminantAnalysis = LinearDiscriminantAnalysis()
 
-    transformed_data: np.ndarray = lda.fit_transform(X=features, y=labels)
+        lda.fit(X=data_X, y=data_y)
+    else:
+        lda = model
 
-    return pd.DataFrame(
-        transformed_data, columns=lda.get_feature_names_out(), index=features.index
-    )
+    return lda, lda.transform(data_X)
 
 
-def comput_kruskal(
-    features: pd.DataFrame, n_components: int, labels_indexes: dict[str, pd.Index]
-) -> pd.DataFrame:
+def comput_kruskal(X: np.ndarray, y: np.ndarray) -> np.ndarray:
     """Comput kruskal wallis H value for each feature
 
     Args:
@@ -56,13 +54,17 @@ def comput_kruskal(
 
     kruskal_wallis_features = {}
 
+    labels = np.unique(y)
+
     # apply kruskal wallis for each feature
-    for feature in features:
+    for i in range(X.shape[1]):
         classes_values = ()
 
+        this_feature = X[:, i]
+
         # split the samples by labels/classes
-        for indexes in labels_indexes.values():
-            classes_values = classes_values + (features[feature].loc[indexes].values,)
+        for label in labels:
+            classes_values = classes_values + (this_feature[label == y],)
 
         try:
             # run kruskal wallis
@@ -70,15 +72,17 @@ def comput_kruskal(
 
             # 99% confidence interval - p-value < 0.01
             if result[1] < 0.01:
-                kruskal_wallis_features[feature] = result[0]
+                kruskal_wallis_features[i] = result[0]
+            else:
+                kruskal_wallis_features[i] = 0
 
         # equal values case
         except ValueError:
-            kruskal_wallis_features[feature] = 0
+            kruskal_wallis_features[i] = 0
 
     # sort features by H value
     kruskal_wallis_features = dict(
         sorted(kruskal_wallis_features.items(), key=lambda x: x[1], reverse=True)
     )
 
-    return features[list(kruskal_wallis_features.keys())[:n_components]]
+    return X[list(kruskal_wallis_features.keys())[:n_components]]
