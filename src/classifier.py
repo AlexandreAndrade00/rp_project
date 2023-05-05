@@ -8,7 +8,9 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-
+from sklearn import svm, datasets
+from sklearn.multiclass import OneVsOneClassifier
+from sklearn.svm import SVC
 
 class Classifier:
     __pre_process_model: PCA | LinearDiscriminantAnalysis | None
@@ -75,7 +77,11 @@ class Classifier:
                 self.__target_class = kwargs["target_class"]
                 self.__distance_type = kwargs["distance_type"]
 
+            case "multi_knn":
+                self.__train_multi_knn()
 
+            case "multi_svm":
+                self.__train_multi_svm()
 
             case _:
                 raise ValueError(model)
@@ -101,10 +107,85 @@ class Classifier:
             case "all_vs_all":
                 self.__predicted_labels = np.asarray([1])
 
+            case "multi_knn":
+                self.__predict_multi_knn(test_data)
+
+            case "multi_svm":
+                self.__predict_multi_svm(test_data)
+
             case _:
                 raise NotImplementedError(self.__selected_model)
 
         return self.__predicted_labels
+    
+    def __train_multi_knn(self, max_iter = 300) -> None:
+        
+        self.n_clusters = self.train_data.label.nunique()
+        self.max_iter = max_iter
+        self.centroids = None
+
+        data: pd.DataFrame = (
+            self.__pre_processed_train_data
+            if (self.__pre_processed_train_data is not None)
+            else self.__train_data
+        )
+
+        X = self.__pre_processed_train_data
+
+        classes_indexes: dict[str, pd.Index] = self.__get_labels_by_indexes(
+            data, self.__train_data_labels
+        ) 
+
+        # Initialize centroids randomly
+        self.centroids = X.sample(n=self.n_clusters)
+        
+        # Iterate until convergence or maximum iterations
+        for i in range(self.max_iter):
+            # Assign each point to the nearest centroid
+            distances = np.sqrt(((X - self.centroids.iloc[:, np.newaxis])**2).sum(axis=2))
+            labels = np.argmin(distances, axis=1)
+            
+            # Update the centroids
+            new_centroids = []
+            for j in range(self.n_clusters):
+                new_centroid = X[labels == j].mean()
+                new_centroids.append(new_centroid)
+            new_centroids = pd.concat(new_centroids, axis=1).T
+            if new_centroids.equals(self.centroids):
+                break
+            self.centroids = new_centroids
+
+    def __predict_multi_knn(self, X: pd.DataFrame) -> np.ndarray:
+        distances = np.sqrt(((X - self.centroids.iloc[:, np.newaxis])**2).sum(axis=2))
+        labels = np.argmin(distances, axis=1)
+        return labels
+    
+    def __train_multi_svm(self, C=1.0, kernel='rbf', degree=3, gamma='scale', coef0=0.0, shrinking=True, probability=False, tol=1e-3):
+        self.C = C
+        self.kernel = kernel
+        self.degree = degree
+        self.gamma = gamma
+        self.coef0 = coef0
+        self.shrinking = shrinking
+        self.probability = probability
+        self.tol = tol
+
+        data: pd.DataFrame = (
+            self.__pre_processed_train_data
+            if (self.__pre_processed_train_data is not None)
+            else self.__train_data
+        )
+
+        X = self.__pre_processed_train_data
+        
+        self.model = OneVsOneClassifier(SVC(C=self.C, kernel=self.kernel, degree=self.degree, 
+                                            gamma=self.gamma, coef0=self.coef0, shrinking=self.shrinking, probability=self.probability, tol=self.tol)).fit(X, self.labels)
+        self.model.fit(X,self.labels)
+
+    def __predict_multi_svm(self, X_test, model):
+        self.X_test = X_test
+        self.model = model
+        labels_pred = model.predict(X_test, model)
 
     def __train_one_vs_all_minimum_distance(self) -> None:
         data: np.ndarray = (
