@@ -1,37 +1,58 @@
-from typing import Literal
 import numpy as np
 from kruskal_wallis import KruskalWallis
 import pre_processing
 import matplotlib.pyplot as plt
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, RocCurveDisplay
 from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.multiclass import OneVsOneClassifier
 from sklearn.svm import SVC
 from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
 
 
 class Classifier:
-    __pre_process_model: PCA | LinearDiscriminantAnalysis | KruskalWallis | None
-    __classifier_model: GaussianNB | OneVsOneClassifier
+    __feature_reduction_model: PCA | LinearDiscriminantAnalysis | None = None
+    __feature_selection_model: KruskalWallis | None = None
+    __classifier_model: GaussianNB | OneVsOneClassifier | KNeighborsClassifier
     __train_X: np.ndarray
     __train_y: np.ndarray
-    __pre_processed_train_X: np.ndarray | None = None
-    __pre_process_method: Literal["PCA", "LDA", "KW", None] = None
+    __target_class: str | None
+    __labels: np.ndarray
+    __pre_processed_train_X: np.ndarray
     __predicted_labels: np.ndarray
 
     def __init__(self, train_X: np.ndarray, train_y: np.ndarray) -> None:
         self.__train_X = train_X
         self.__train_y = train_y
-        self.__pre_process_model = None
+        self.__pre_processed_train_X = self.__train_X
 
-    def pre_process(self, method: str) -> None:
-        self.__pre_processed_train_X = self.__pre_process(
-            method, X=self.__train_X, y=self.__train_y
+        self.__labels = np.unique(train_y)
+
+        if self.__labels.size == 2:
+            self.__target_class = (
+                self.__labels[0] if self.__labels[0] != "other" else self.__labels[1]
+            )
+        else:
+            self.__target_class = None
+
+    def feature_selection(self):
+        self.__pre_processed_train_X = self.__feature_selection(
+            X=self.__pre_processed_train_X, y=self.__train_y
         )
 
-    def __pre_process(
+    def __feature_selection(self, X: np.ndarray, y: np.ndarray | None = None):
+        self.__feature_selection_model, result = pre_processing.comput_kruskal(X=X, y=y, model=self.__feature_selection_model)  # type: ignore
+
+        return result
+
+    def feature_reduction(self, method: str) -> None:
+        self.__pre_processed_train_X = self.__feature_reduction(
+            method, X=self.__pre_processed_train_X, y=self.__train_y
+        )
+
+    def __feature_reduction(
         self,
         method: str,
         X: np.ndarray,
@@ -41,42 +62,32 @@ class Classifier:
 
         match method:
             case "PCA":
-                self.__pre_process_model, result = pre_processing.comput_PCA(
-                    features=X, model=self.__pre_process_model  # type: ignore
+                self.__feature_reduction_model, result = pre_processing.comput_PCA(
+                    features=X, model=self.__feature_reduction_model  # type: ignore
                 )
 
             case "LDA":
-                if y is None:
-                    raise TypeError("Labels are empty")
-
-                self.__pre_process_model, result = pre_processing.comput_LDA(data_X=X, data_y=y, model=self.__pre_process_model)  # type: ignore
-
-            case "KW":
-                if y is None:
-                    raise TypeError("Labels are empty")
-
-                self.__pre_process_model, result = pre_processing.comput_kruskal(X=X, y=y, model=self.__pre_process_model)  # type: ignore
+                self.__feature_reduction_model, result = pre_processing.comput_LDA(
+                    data_X=X, data_y=y, model=self.__feature_reduction_model  # type: ignore
+                )
 
             case _:
                 raise ValueError("Unknown pre process method")
-
-        self.__pre_process_method = method
 
         return result
 
     def train(self, model: str, **kwargs) -> None:
         match model:
             case "one_vs_all":
-                self.__target_class = kwargs["target_class"]
                 self.__distance_type = kwargs["distance_type"]
 
                 self.__train_one_vs_all_minimum_distance()
 
             case "gnb":
-                self.__train_all_vs_all_GNB()
+                self.__train_GNB()
 
-            # case "multi_knn":
-            #     self.__train_multi_knn()
+            case "multi_knn":
+                self.__train_Knn()
 
             case "svm":
                 self.__train_multi_svm()
@@ -86,14 +97,18 @@ class Classifier:
 
         self.__selected_model: str = model
 
-    def predict(self, test_X: np.ndarray, test_y: np.ndarray) -> np.ndarray:
+    def predict(self, test_X: np.ndarray) -> np.ndarray:
         test_data = test_X
 
-        if self.__pre_process_method is not None:
-            test_data = self.__pre_process(
-                self.__pre_process_method,
-                test_X,
-                test_y,
+        if self.__feature_selection_model is not None:
+            test_data = self.__feature_selection(test_X)
+
+        if self.__feature_reduction_model is not None:
+            method: str = "PCA" if self.__feature_reduction_model is PCA else "LDA"
+
+            test_data = self.__feature_reduction(
+                method,
+                test_data,
             )
 
         match self.__selected_model:
@@ -103,10 +118,10 @@ class Classifier:
                 )
 
             case "gnb":
-                self.__predicted_labels = self.__predict_all_vs_all_GNB(test_data)
+                self.__predicted_labels = self.__predict_GNB(test_data)
 
-            # case "multi_knn":
-            #     self.__predict_multi_knn(test_data)
+            case "knn":
+                self.__predicted_labels = self.__predict_Knn(test_data)
 
             case "svm":
                 self.__predicted_labels = self.__predict_multi_svm(test_data)
@@ -154,12 +169,6 @@ class Classifier:
     #     return labels
 
     def __train_multi_svm(self):
-        data: np.ndarray = (
-            self.__pre_processed_train_X
-            if (self.__pre_processed_train_X is not None)
-            else self.__train_X
-        )
-
         self.__classifier_model = OneVsOneClassifier(
             SVC(
                 C=1.0,
@@ -173,17 +182,13 @@ class Classifier:
             )
         )
 
-        self.__classifier_model.fit(data, self.__train_y)
+        self.__classifier_model.fit(self.__pre_processed_train_X, self.__train_y)
 
     def __predict_multi_svm(self, X_test: np.ndarray):
         return self.__classifier_model.predict(X_test)
 
     def __train_one_vs_all_minimum_distance(self) -> None:
-        data: np.ndarray = (
-            self.__pre_processed_train_X
-            if (self.__pre_processed_train_X is not None)
-            else self.__train_X
-        )
+        data: np.ndarray = self.__pre_processed_train_X
 
         self.__mean_target_class = np.zeros([data.shape[1]])
 
@@ -213,7 +218,7 @@ class Classifier:
             min_dist = np.argmin(distances)
 
             return min_dist
-        
+
         result: np.ndarray
 
         if test_X.shape[1] == 0:
@@ -232,17 +237,18 @@ class Classifier:
             ]
         )
 
-    def __train_all_vs_all_GNB(self) -> None:
-        data: np.ndarray = (
-            self.__pre_processed_train_X
-            if (self.__pre_processed_train_X is not None)
-            else self.__train_X
-        )
-
+    def __train_GNB(self) -> None:
         gnb = GaussianNB()
-        self.__classifier_model = gnb.fit(data, self.__train_y)
+        self.__classifier_model = gnb.fit(self.__pre_processed_train_X, self.__train_y)
 
-    def __predict_all_vs_all_GNB(self, test_X: np.ndarray) -> np.ndarray:
+    def __predict_GNB(self, test_X: np.ndarray) -> np.ndarray:
+        return self.__classifier_model.predict(test_X)
+
+    def __train_Knn(self) -> None:
+        knn = KNeighborsClassifier(n_neighbors=3)
+        self.__classifier_model = knn.fit(self.__pre_processed_train_X, self.__train_y)
+
+    def __predict_Knn(self, test_X: np.ndarray) -> np.ndarray:
         return self.__classifier_model.predict(test_X)
 
     def get_statistics(
@@ -263,8 +269,32 @@ class Classifier:
             print(stats)
 
         if show_matrix:
+            plt.figure()
             ConfusionMatrixDisplay.from_predictions(
                 target, self.__predicted_labels, labels=labels
             )
+            plt.plot()
 
+            if self.__target_class == None:
+                return
+
+            target_normalized = np.asarray(
+                [
+                    1 if target[i] == self.__target_class else 0
+                    for i in range(target.size)
+                ]
+            )
+
+            predicted_normalized = np.asarray(
+                [
+                    1 if self.__predicted_labels[i] == self.__target_class else 0
+                    for i in range(self.__predicted_labels.size)
+                ]
+            )
+
+            plt.figure()
+            RocCurveDisplay.from_predictions(
+                target_normalized,
+                predicted_normalized,
+            )
             plt.plot()

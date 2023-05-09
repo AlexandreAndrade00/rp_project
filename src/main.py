@@ -5,15 +5,17 @@ TARGET_CLASS = "blues"
 
 
 def main():
-    X_train, X_test, y_train, y_test = read_and_standardize_data(False)
+    X_train, X_test, y_train, y_test = read_and_standardize_data(True, "blues")
 
     model: cl.Classifier = cl.Classifier(X_train, y_train)
 
-    model.pre_process("KW")
+    model.feature_selection()
 
-    model.train("gnb")
+    model.feature_reduction("LDA")
 
-    model.predict(X_test, y_test)
+    model.train("one_vs_all", distance_type="euclidean")
+
+    model.predict(X_test)
 
     model.get_statistics(y_test, True)
 

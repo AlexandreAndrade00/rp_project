@@ -28,9 +28,13 @@ def comput_PCA(
 
 
 def comput_LDA(
-    data_X: np.ndarray, data_y: np.ndarray, model: LinearDiscriminantAnalysis | None
+    data_X: np.ndarray, data_y: np.ndarray | None, model: LinearDiscriminantAnalysis | None
 ) -> tuple[LinearDiscriminantAnalysis, np.ndarray]:
+    
     if model is None:
+        if  data_y is None:
+            raise ValueError("If no model is given, it is necessary the labels to train one") 
+
         lda: LinearDiscriminantAnalysis = LinearDiscriminantAnalysis()
 
         lda.fit(X=data_X, y=data_y)
@@ -40,7 +44,7 @@ def comput_LDA(
     return lda, lda.transform(data_X)
 
 
-def comput_kruskal(X: np.ndarray, y: np.ndarray, model: KruskalWallis | None) -> tuple[KruskalWallis, np.ndarray]:
+def comput_kruskal(X: np.ndarray, y: np.ndarray | None, model: KruskalWallis | None) -> tuple[KruskalWallis, np.ndarray]:
     """Comput kruskal wallis H value for each feature
 
     Args:
@@ -50,10 +54,13 @@ def comput_kruskal(X: np.ndarray, y: np.ndarray, model: KruskalWallis | None) ->
     Returns:
         dict[str, float]: return the sorted H value by feature
     """
-
     if model is None:
-            kw: KruskalWallis = KruskalWallis(20)
-            kw.fit(X=X, y=y)
+        if  y is None:
+            raise ValueError("If no model is given, it is necessary the labels to train one") 
+
+        kw: KruskalWallis = KruskalWallis(130)
+
+        kw.fit(X=X, y=y)
     else:
         kw = model
 
