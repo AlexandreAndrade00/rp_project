@@ -1,6 +1,5 @@
-import pandas as pd
 import numpy as np
-from scipy.stats import kruskal
+from kruskal_wallis import KruskalWallis
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
@@ -41,7 +40,7 @@ def comput_LDA(
     return lda, lda.transform(data_X)
 
 
-def comput_kruskal(X: np.ndarray, y: np.ndarray) -> np.ndarray:
+def comput_kruskal(X: np.ndarray, y: np.ndarray, model: KruskalWallis | None) -> tuple[KruskalWallis, np.ndarray]:
     """Comput kruskal wallis H value for each feature
 
     Args:
@@ -52,37 +51,10 @@ def comput_kruskal(X: np.ndarray, y: np.ndarray) -> np.ndarray:
         dict[str, float]: return the sorted H value by feature
     """
 
-    kruskal_wallis_features = {}
+    if model is None:
+            kw: KruskalWallis = KruskalWallis(20)
+            kw.fit(X=X, y=y)
+    else:
+        kw = model
 
-    labels = np.unique(y)
-
-    # apply kruskal wallis for each feature
-    for i in range(X.shape[1]):
-        classes_values = ()
-
-        this_feature = X[:, i]
-
-        # split the samples by labels/classes
-        for label in labels:
-            classes_values = classes_values + (this_feature[label == y],)
-
-        try:
-            # run kruskal wallis
-            result = kruskal(*classes_values)
-
-            # 99% confidence interval - p-value < 0.01
-            if result[1] < 0.01:
-                kruskal_wallis_features[i] = result[0]
-            else:
-                kruskal_wallis_features[i] = 0
-
-        # equal values case
-        except ValueError:
-            kruskal_wallis_features[i] = 0
-
-    # sort features by H value
-    kruskal_wallis_features = dict(
-        sorted(kruskal_wallis_features.items(), key=lambda x: x[1], reverse=True)
-    )
-
-    return X[list(kruskal_wallis_features.keys())[:n_components]]
+    return kw, kw.transform(X)

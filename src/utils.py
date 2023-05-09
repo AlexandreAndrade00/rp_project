@@ -4,7 +4,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 
-def read_and_standardize_data(target_class: str, two_classes: bool) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def read_and_standardize_data( two_classes: bool, target_class: str = '') -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Read data from data file, split in train and test groups and standardize the data with z-score
 
     Returns:
@@ -13,7 +13,10 @@ def read_and_standardize_data(target_class: str, two_classes: bool) -> tuple[np.
     """
 
     # read the data
-    data: pd.DataFrame = pd.read_csv("data/dados.csv")
+    try:
+        data: pd.DataFrame = pd.read_csv("data/dados.csv")
+    except:
+        data: pd.DataFrame = pd.read_csv("../data/dados.csv")
 
     data_y = data['label'].values
     data_X = data.drop(columns=['label', 'filename']).values

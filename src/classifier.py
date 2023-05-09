@@ -1,19 +1,20 @@
-from io import TextIOWrapper
 from typing import Literal
-import pandas as pd
 import numpy as np
+from kruskal_wallis import KruskalWallis
 import pre_processing
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn import svm, datasets
 from sklearn.multiclass import OneVsOneClassifier
 from sklearn.svm import SVC
+from sklearn.naive_bayes import GaussianNB
+
 
 class Classifier:
-    __pre_process_model: PCA | LinearDiscriminantAnalysis | None
+    __pre_process_model: PCA | LinearDiscriminantAnalysis | KruskalWallis | None
+    __classifier_model: GaussianNB | OneVsOneClassifier
     __train_X: np.ndarray
     __train_y: np.ndarray
     __pre_processed_train_X: np.ndarray | None = None
@@ -54,10 +55,7 @@ class Classifier:
                 if y is None:
                     raise TypeError("Labels are empty")
 
-                result = pre_processing.comput_kruskal(
-                    X=X,
-                    y=y,
-                )
+                self.__pre_process_model, result = pre_processing.comput_kruskal(X=X, y=y, model=self.__pre_process_model)  # type: ignore
 
             case _:
                 raise ValueError("Unknown pre process method")
@@ -73,14 +71,14 @@ class Classifier:
                 self.__distance_type = kwargs["distance_type"]
 
                 self.__train_one_vs_all_minimum_distance()
-            case "all_vs_all":
-                self.__target_class = kwargs["target_class"]
-                self.__distance_type = kwargs["distance_type"]
 
-            case "multi_knn":
-                self.__train_multi_knn()
+            case "gnb":
+                self.__train_all_vs_all_GNB()
 
-            case "multi_svm":
+            # case "multi_knn":
+            #     self.__train_multi_knn()
+
+            case "svm":
                 self.__train_multi_svm()
 
             case _:
@@ -104,88 +102,81 @@ class Classifier:
                     self.__predict_one_vs_all_euclidean_minimum_distance(test_data)
                 )
 
-            case "all_vs_all":
-                self.__predicted_labels = np.asarray([1])
+            case "gnb":
+                self.__predicted_labels = self.__predict_all_vs_all_GNB(test_data)
 
-            case "multi_knn":
-                self.__predict_multi_knn(test_data)
+            # case "multi_knn":
+            #     self.__predict_multi_knn(test_data)
 
-            case "multi_svm":
-                self.__predict_multi_svm(test_data)
+            case "svm":
+                self.__predicted_labels = self.__predict_multi_svm(test_data)
 
             case _:
                 raise NotImplementedError(self.__selected_model)
 
         return self.__predicted_labels
-    
-    def __train_multi_knn(self, max_iter = 300) -> None:
-        
-        self.n_clusters = self.train_data.label.nunique()
-        self.max_iter = max_iter
-        self.centroids = None
 
-        data: pd.DataFrame = (
-            self.__pre_processed_train_data
-            if (self.__pre_processed_train_data is not None)
-            else self.__train_data
+    # def __train_multi_knn(self, max_iter=300) -> None:
+    #     self.n_clusters = self.train_data.label.nunique()
+    #     self.max_iter = max_iter
+    #     self.centroids = None
+
+    #     data: np.ndarray = (
+    #         self.__pre_processed_train_X
+    #         if (self.__pre_processed_train_X is not None)
+    #         else self.__train_X
+    #     )
+
+    #     # Initialize centroids randomly
+    #     self.__centroids = data.sample(n=self.n_clusters)
+
+    #     # Iterate until convergence or maximum iterations
+    #     for i in range(self.max_iter):
+    #         # Assign each point to the nearest centroid
+    #         distances = np.sqrt(
+    #             ((X - self.centroids.iloc[:, np.newaxis]) ** 2).sum(axis=2)
+    #         )
+    #         labels = np.argmin(distances, axis=1)
+
+    #         # Update the centroids
+    #         new_centroids = []
+    #         for j in range(self.n_clusters):
+    #             new_centroid = X[labels == j].mean()
+    #             new_centroids.append(new_centroid)
+    #         new_centroids = pd.concat(new_centroids, axis=1).T
+    #         if new_centroids.equals(self.centroids):
+    #             break
+    #         self.centroids = new_centroids
+
+    # def __predict_multi_knn(self, X: np.ndarray) -> np.ndarray:
+    #     distances = np.sqrt(((X - self.centroids.iloc[:, np.newaxis]) ** 2).sum(axis=2))
+    #     labels = np.argmin(distances, axis=1)
+    #     return labels
+
+    def __train_multi_svm(self):
+        data: np.ndarray = (
+            self.__pre_processed_train_X
+            if (self.__pre_processed_train_X is not None)
+            else self.__train_X
         )
 
-        X = self.__pre_processed_train_data
-
-        classes_indexes: dict[str, pd.Index] = self.__get_labels_by_indexes(
-            data, self.__train_data_labels
-        ) 
-
-        # Initialize centroids randomly
-        self.centroids = X.sample(n=self.n_clusters)
-        
-        # Iterate until convergence or maximum iterations
-        for i in range(self.max_iter):
-            # Assign each point to the nearest centroid
-            distances = np.sqrt(((X - self.centroids.iloc[:, np.newaxis])**2).sum(axis=2))
-            labels = np.argmin(distances, axis=1)
-            
-            # Update the centroids
-            new_centroids = []
-            for j in range(self.n_clusters):
-                new_centroid = X[labels == j].mean()
-                new_centroids.append(new_centroid)
-            new_centroids = pd.concat(new_centroids, axis=1).T
-            if new_centroids.equals(self.centroids):
-                break
-            self.centroids = new_centroids
-
-    def __predict_multi_knn(self, X: pd.DataFrame) -> np.ndarray:
-        distances = np.sqrt(((X - self.centroids.iloc[:, np.newaxis])**2).sum(axis=2))
-        labels = np.argmin(distances, axis=1)
-        return labels
-    
-    def __train_multi_svm(self, C=1.0, kernel='rbf', degree=3, gamma='scale', coef0=0.0, shrinking=True, probability=False, tol=1e-3):
-        self.C = C
-        self.kernel = kernel
-        self.degree = degree
-        self.gamma = gamma
-        self.coef0 = coef0
-        self.shrinking = shrinking
-        self.probability = probability
-        self.tol = tol
-
-        data: pd.DataFrame = (
-            self.__pre_processed_train_data
-            if (self.__pre_processed_train_data is not None)
-            else self.__train_data
+        self.__classifier_model = OneVsOneClassifier(
+            SVC(
+                C=1.0,
+                kernel="rbf",
+                degree=3,
+                gamma="scale",
+                coef0=0.0,
+                shrinking=True,
+                probability=False,
+                tol=1e-3,
+            )
         )
 
-        X = self.__pre_processed_train_data
-        
-        self.model = OneVsOneClassifier(SVC(C=self.C, kernel=self.kernel, degree=self.degree, 
-                                            gamma=self.gamma, coef0=self.coef0, shrinking=self.shrinking, probability=self.probability, tol=self.tol)).fit(X, self.labels)
-        self.model.fit(X,self.labels)
+        self.__classifier_model.fit(data, self.__train_y)
 
-    def __predict_multi_svm(self, X_test, model):
-        self.X_test = X_test
-        self.model = model
-        labels_pred = model.predict(X_test, model)
+    def __predict_multi_svm(self, X_test: np.ndarray):
+        return self.__classifier_model.predict(X_test)
 
     def __train_one_vs_all_minimum_distance(self) -> None:
         data: np.ndarray = (
@@ -209,10 +200,6 @@ class Classifier:
                 self.__train_y != self.__target_class
             ].mean()
 
-    def __train_all_vs_all_GNB(self) -> None:
-        # TODO
-        return
-
     def __predict_one_vs_all_euclidean_minimum_distance(
         self, test_X: np.ndarray
     ) -> np.ndarray:
@@ -226,9 +213,11 @@ class Classifier:
             min_dist = np.argmin(distances)
 
             return min_dist
+        
+        result: np.ndarray
 
         if test_X.shape[1] == 0:
-            result = predict_one(test_X)
+            result = np.asarray(predict_one(test_X))
         else:
             result = np.zeros(test_X.shape[0])
 
@@ -237,35 +226,45 @@ class Classifier:
                 result[index] = result_teste
 
         return np.asarray(
-            [self.__target_class if elem == 0 else "other" for elem in result]
+            [
+                self.__target_class if result[i] == 0 else "other"
+                for i in range(result.size)
+            ]
         )
+
+    def __train_all_vs_all_GNB(self) -> None:
+        data: np.ndarray = (
+            self.__pre_processed_train_X
+            if (self.__pre_processed_train_X is not None)
+            else self.__train_X
+        )
+
+        gnb = GaussianNB()
+        self.__classifier_model = gnb.fit(data, self.__train_y)
+
+    def __predict_all_vs_all_GNB(self, test_X: np.ndarray) -> np.ndarray:
+        return self.__classifier_model.predict(test_X)
 
     def get_statistics(
         self,
         target: np.ndarray,
-        target_class_name: str,
         show_matrix: bool,
-        file: TextIOWrapper | None = None,
-    ) -> dict[str, float]:
-        cm = confusion_matrix(
-            target, self.__predicted_labels, labels=[target_class_name, "other"]
-        )
+    ) -> None:
+        labels = np.unique(self.__train_y)
 
-        stats: dict[str, float] = dict()
-        stats["sensitivity"] = cm[0, 0] / (cm[0, 0] + cm[0, 1])
-        stats["specificity"] = cm[1, 1] / (cm[1, 1] + cm[1, 0])
-        stats["precision"] = cm[0, 0] / (cm[0, 0] + cm[1, 0])
+        if labels.size == 2:
+            cm = confusion_matrix(target, self.__predicted_labels, labels=labels)
 
-        print(stats)
+            stats: dict[str, float] = dict()
+            stats["sensitivity"] = cm[0, 0] / (cm[0, 0] + cm[0, 1])
+            stats["specificity"] = cm[1, 1] / (cm[1, 1] + cm[1, 0])
+            stats["precision"] = cm[0, 0] / (cm[0, 0] + cm[1, 0])
 
-        if file is not None:
-            file.write(str(stats) + "\n")
+            print(stats)
 
         if show_matrix:
             ConfusionMatrixDisplay.from_predictions(
-                target, self.__predicted_labels, labels=[target_class_name, "other"]
+                target, self.__predicted_labels, labels=labels
             )
 
             plt.plot()
-
-        return stats
