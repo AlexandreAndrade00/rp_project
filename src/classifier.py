@@ -1,3 +1,4 @@
+from typing import Literal
 import numpy as np
 from kruskal_wallis import KruskalWallis
 import pre_processing
@@ -10,12 +11,13 @@ from sklearn.multiclass import OneVsOneClassifier
 from sklearn.svm import SVC
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import GridSearchCV
 
 
 class Classifier:
     __feature_reduction_model: PCA | LinearDiscriminantAnalysis | None = None
     __feature_selection_model: KruskalWallis | None = None
-    __classifier_model: GaussianNB | OneVsOneClassifier | KNeighborsClassifier
+    __classifier_model: GaussianNB | OneVsOneClassifier | KNeighborsClassifier | SVC
     __train_X: np.ndarray
     __train_y: np.ndarray
     __target_class: str | None
@@ -169,12 +171,31 @@ class Classifier:
     #     return labels
 
     def __train_multi_svm(self):
+        param_grid = [
+            {"C": [0.2, 0.5, 0.8, 1, 10, 100, 1000], "kernel": ["linear"]},
+            {
+                "C": [0.2, 0.5, 0.8, 1, 10, 100, 1000],
+                "gamma": [0.01, 0.001, 0.0001, 0.00001],
+                "kernel": ["rbf"],
+            },
+        ]
+
+        clf = GridSearchCV(SVC(), param_grid)
+        clf.fit(self.__pre_processed_train_X, self.__train_y)
+
+        gamma: float | Literal['scale', 'auto']
+
+        try:
+            gamma = clf.best_params_['gamma']
+        except:
+            gamma = 'scale' 
+
         self.__classifier_model = OneVsOneClassifier(
             SVC(
-                C=1.0,
-                kernel="rbf",
+                C=clf.best_params_['C'],
+                kernel=clf.best_params_['kernel'],
                 degree=3,
-                gamma="scale",
+                gamma=gamma,
                 coef0=0.0,
                 shrinking=True,
                 probability=False,
@@ -262,9 +283,9 @@ class Classifier:
             cm = confusion_matrix(target, self.__predicted_labels, labels=labels)
 
             stats: dict[str, float] = dict()
-            stats["sensitivity"] = cm[0, 0] / (cm[0, 0] + cm[0, 1])
-            stats["specificity"] = cm[1, 1] / (cm[1, 1] + cm[1, 0])
-            stats["precision"] = cm[0, 0] / (cm[0, 0] + cm[1, 0])
+            stats["sensitivity"] = float(cm[0, 0] / (cm[0, 0] + cm[0, 1]))
+            stats["specificity"] = float(cm[1, 1] / (cm[1, 1] + cm[1, 0]))
+            stats["precision"] = float(cm[0, 0] / (cm[0, 0] + cm[1, 0]))
 
             print(stats)
 
