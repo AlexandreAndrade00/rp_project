@@ -86,7 +86,7 @@ class Classifier:
             case "gnb":
                 self.__train_GNB()
 
-            case "multi_knn":
+            case "knn":
                 self.__train_Knn()
 
             case "svm":
@@ -268,6 +268,10 @@ class Classifier:
 
             print(stats)
 
+        else:
+            #num of labels is 10
+            pass
+
         if show_matrix:
             plt.figure()
             ConfusionMatrixDisplay.from_predictions(
@@ -298,3 +302,5 @@ class Classifier:
                 predicted_normalized,
             )
             plt.plot()
+
+        return stats
