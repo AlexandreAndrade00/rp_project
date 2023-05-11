@@ -88,7 +88,7 @@ class Classifier:
             case "gnb":
                 self.__train_GNB()
 
-            case "multi_knn":
+            case "knn":
                 self.__train_Knn()
 
             case "svm":
@@ -275,6 +275,30 @@ class Classifier:
 
             print(stats)
 
+        else:
+            #num of labels is 10
+            import pandas as pd
+            lab = ['blues', 'classical', 'country', 'disco', 'hiphop', 'jazz', 'metal', 'pop', 'reggae', 'rock']
+            cm = confusion_matrix(target, self.__predicted_labels, labels=lab)
+            cm_df = pd.DataFrame(cm)
+            print(cm_df)
+
+            from sklearn.metrics import precision_recall_fscore_support
+
+            result=[]
+            for lab in lab:
+                precision, recall, f_score, support = precision_recall_fscore_support(np.array(target)==lab, np.array(self.__predicted_labels)==lab)
+                result.append([lab, recall[1], recall[0], precision[1]])
+            dfr=pd.DataFrame(result, columns=["label", "sensitivity", "specificity", "precision"])
+            # calculate the mean
+            mean_sensitivity = dfr.loc[:,'sensitivity'].mean()
+            mean_specificity = dfr.loc[:,'specificity'].mean()
+            mean_precision = dfr.loc[:,'precision'].mean()
+            stats = [mean_sensitivity, mean_specificity, mean_precision]
+ 
+            print(dfr)
+            
+
         if show_matrix:
             plt.figure()
             ConfusionMatrixDisplay.from_predictions(
@@ -305,3 +329,5 @@ class Classifier:
                 predicted_normalized,
             )
             plt.plot()
+
+        return stats
