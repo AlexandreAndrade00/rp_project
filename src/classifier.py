@@ -116,7 +116,7 @@ class Classifier:
         match self.__selected_model:
             case "one_vs_all":
                 self.__predicted_labels = (
-                    self.__predict_one_vs_all_euclidean_minimum_distance(test_data)
+                    self.__predict_one_vs_all_minimum_distance(test_data)
                 )
 
             case "gnb":
@@ -183,17 +183,17 @@ class Classifier:
         clf = GridSearchCV(SVC(), param_grid)
         clf.fit(self.__pre_processed_train_X, self.__train_y)
 
-        gamma: float | Literal['scale', 'auto']
+        gamma: float | Literal["scale", "auto"]
 
         try:
-            gamma = clf.best_params_['gamma']
+            gamma = clf.best_params_["gamma"]
         except:
-            gamma = 'scale' 
+            gamma = "scale"
 
         self.__classifier_model = OneVsOneClassifier(
             SVC(
-                C=clf.best_params_['C'],
-                kernel=clf.best_params_['kernel'],
+                C=clf.best_params_["C"],
+                kernel=clf.best_params_["kernel"],
                 degree=3,
                 gamma=gamma,
                 coef0=0.0,
@@ -226,35 +226,21 @@ class Classifier:
                 self.__train_y != self.__target_class
             ].mean()
 
-    def __predict_one_vs_all_euclidean_minimum_distance(
+    def __predict_one_vs_all_minimum_distance(
         self, test_X: np.ndarray
     ) -> np.ndarray:
-        def predict_one(one_sample: np.ndarray):
-            distances = cdist(
-                [self.__mean_target_class, self.__mean_other_classes],
-                [one_sample],
-                self.__distance_type,
-            )
+        distances = cdist(
+            [self.__mean_target_class, self.__mean_other_classes],
+            test_X,
+            self.__distance_type,
+        )
 
-            min_dist = np.argmin(distances)
-
-            return min_dist
-
-        result: np.ndarray
-
-        if test_X.shape[1] == 0:
-            result = np.asarray(predict_one(test_X))
-        else:
-            result = np.zeros(test_X.shape[0])
-
-            for index in range(test_X.shape[0]):
-                result_teste = predict_one(test_X[index, :])
-                result[index] = result_teste
+        min_dist = np.argmin(distances, axis=0)
 
         return np.asarray(
             [
-                self.__target_class if result[i] == 0 else "other"
-                for i in range(result.size)
+                self.__target_class if min_dist[i] == 0 else "other"
+                for i in range(min_dist.size)
             ]
         )
 
