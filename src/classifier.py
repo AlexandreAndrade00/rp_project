@@ -39,20 +39,21 @@ class Classifier:
         else:
             self.__target_class = None
 
-    def feature_selection(self):
+    def feature_selection(self, n_components: int | None):
         self.__pre_processed_train_X = self.__feature_selection(
-            X=self.__pre_processed_train_X, y=self.__train_y
+            X=self.__pre_processed_train_X, y=self.__train_y, n_components=n_components
         )
 
-    def __feature_selection(self, X: np.ndarray, y: np.ndarray | None = None):
-        self.__feature_selection_model, result = pre_processing.comput_kruskal(X=X, y=y, model=self.__feature_selection_model)  # type: ignore
+    def __feature_selection(self, X: np.ndarray, y: np.ndarray | None = None, n_components: int | None = None):
+        self.__feature_selection_model, result = pre_processing.comput_kruskal(X=X, y=y, model=self.__feature_selection_model, n_components=n_components)  # type: ignore
 
         return result
 
     def feature_reduction(self, method: str) -> None:
-        self.__pre_processed_train_X = self.__feature_reduction(
-            method, X=self.__pre_processed_train_X, y=self.__train_y
-        )
+        if (self.__pre_processed_train_X.shape[1] > 1):
+            self.__pre_processed_train_X = self.__feature_reduction(
+                method, X=self.__pre_processed_train_X, y=self.__train_y
+            )
 
     def __feature_reduction(
         self,
@@ -171,31 +172,31 @@ class Classifier:
     #     return labels
 
     def __train_multi_svm(self):
-        param_grid = [
-            {"C": [0.2, 0.5, 0.8, 1, 10, 100, 1000], "kernel": ["linear"]},
-            {
-                "C": [0.2, 0.5, 0.8, 1, 10, 100, 1000],
-                "gamma": [0.01, 0.001, 0.0001, 0.00001],
-                "kernel": ["rbf"],
-            },
-        ]
+        # param_grid = [
+        #     {"C": [1, 10, 100], "kernel": ["linear"]},
+        #     {
+        #         "C": [1, 10, 100],
+        #         "gamma": [0.001, 0.0001, 0.00001],
+        #         "kernel": ["rbf"],
+        #     },
+        # ]
 
-        clf = GridSearchCV(SVC(), param_grid)
-        clf.fit(self.__pre_processed_train_X, self.__train_y)
+        # clf = GridSearchCV(SVC(), param_grid)
+        # clf.fit(self.__pre_processed_train_X, self.__train_y)
 
-        gamma: float | Literal["scale", "auto"]
+        # gamma: float | Literal["scale", "auto"]
 
-        try:
-            gamma = clf.best_params_["gamma"]
-        except:
-            gamma = "scale"
+        # try:
+        #     gamma = clf.best_params_["gamma"]
+        # except:
+        #     gamma = "scale"
 
         self.__classifier_model = OneVsOneClassifier(
             SVC(
-                C=clf.best_params_["C"],
-                kernel=clf.best_params_["kernel"],
+                C=10,
+                kernel="rbf",
                 degree=3,
-                gamma=gamma,
+                gamma=0.0001,
                 coef0=0.0,
                 shrinking=True,
                 probability=False,
@@ -252,7 +253,7 @@ class Classifier:
         return self.__classifier_model.predict(test_X)
 
     def __train_Knn(self) -> None:
-        knn = KNeighborsClassifier(n_neighbors=3)
+        knn = KNeighborsClassifier(n_neighbors=5)
         self.__classifier_model = knn.fit(self.__pre_processed_train_X, self.__train_y)
 
     def __predict_Knn(self, test_X: np.ndarray) -> np.ndarray:
@@ -265,15 +266,16 @@ class Classifier:
     ) -> None:
         labels = np.unique(self.__train_y)
 
+        stats: dict[str, float | list[float]] = dict()
+
         if labels.size == 2:
             cm = confusion_matrix(target, self.__predicted_labels, labels=labels)
-
-            stats: dict[str, float] = dict()
+            
             stats["sensitivity"] = float(cm[0, 0] / (cm[0, 0] + cm[0, 1]))
             stats["specificity"] = float(cm[1, 1] / (cm[1, 1] + cm[1, 0]))
             stats["precision"] = float(cm[0, 0] / (cm[0, 0] + cm[1, 0]))
 
-            print(stats)
+            # print(stats)
 
         else:
             #num of labels is 10
@@ -281,7 +283,7 @@ class Classifier:
             lab = ['blues', 'classical', 'country', 'disco', 'hiphop', 'jazz', 'metal', 'pop', 'reggae', 'rock']
             cm = confusion_matrix(target, self.__predicted_labels, labels=lab)
             cm_df = pd.DataFrame(cm)
-            print(cm_df)
+            # print(cm_df)
 
             from sklearn.metrics import precision_recall_fscore_support
 
@@ -291,12 +293,11 @@ class Classifier:
                 result.append([lab, recall[1], recall[0], precision[1]])
             dfr=pd.DataFrame(result, columns=["label", "sensitivity", "specificity", "precision"])
             # calculate the mean
-            mean_sensitivity = dfr.loc[:,'sensitivity'].mean()
-            mean_specificity = dfr.loc[:,'specificity'].mean()
-            mean_precision = dfr.loc[:,'precision'].mean()
-            stats = [mean_sensitivity, mean_specificity, mean_precision]
+            stats["sensitivity"] = [dfr.loc[:,'sensitivity'].mean(), dfr.loc[:,'sensitivity'].std()]
+            stats["specificity"] = [dfr.loc[:,'specificity'].mean(), dfr.loc[:,'specificity'].std()]
+            stats["precision"] = [dfr.loc[:,'precision'].mean(), dfr.loc[:,'specificity'].std()]
  
-            print(dfr)
+            # print(dfr)
             
 
         if show_matrix:

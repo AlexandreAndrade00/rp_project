@@ -44,7 +44,7 @@ def comput_LDA(
     return lda, lda.transform(data_X)
 
 
-def comput_kruskal(X: np.ndarray, y: np.ndarray | None, model: KruskalWallis | None) -> tuple[KruskalWallis, np.ndarray]:
+def comput_kruskal(X: np.ndarray, y: np.ndarray | None, model: KruskalWallis | None, n_components: int = 50) -> tuple[KruskalWallis, np.ndarray]:
     """Comput kruskal wallis H value for each feature
 
     Args:
@@ -58,7 +58,7 @@ def comput_kruskal(X: np.ndarray, y: np.ndarray | None, model: KruskalWallis | N
         if  y is None:
             raise ValueError("If no model is given, it is necessary the labels to train one") 
 
-        kw: KruskalWallis = KruskalWallis(130)
+        kw: KruskalWallis = KruskalWallis(n_components)
 
         kw.fit(X=X, y=y)
     else:

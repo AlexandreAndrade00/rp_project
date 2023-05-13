@@ -24,8 +24,8 @@ class KruskalWallis:
                 # run kruskal wallis
                 result = kruskal(*classes_values)
 
-                # 99% confidence interval - p-value < 0.01
-                if result[1] < 0.01:
+                # 95% confidence interval - p-value < 0.01
+                if result[1] < 0.05:
                     kruskal_wallis_features[i] = result[0]
                 else:
                     kruskal_wallis_features[i] = 0
