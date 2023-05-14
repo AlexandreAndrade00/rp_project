@@ -193,10 +193,10 @@ class Classifier:
 
         self.__classifier_model = OneVsOneClassifier(
             SVC(
-                C=10,
-                kernel="rbf",
+                C=100,
+                kernel="linear",
                 degree=3,
-                gamma=0.0001,
+                # gamma=0.0001,
                 coef0=0.0,
                 shrinking=True,
                 probability=False,
